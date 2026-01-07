@@ -1,6 +1,10 @@
-# ChurchTools Extension Boilerplate
+# ChurchTools Gruppenmitgliedsfelder-Picker
 
-This project provides a boilerplate for building your own extension for [ChurchTools](https://www.church.tools).
+Eine ChurchTools-Extension zum Sammeln und Zusammenführen von Gruppenmitgliedsfeldern aus mehreren Quellgruppen in eine Zielgruppe.
+
+## Dokumentation
+
+Siehe [Konzeptdokument](docs/KONZEPT.md) für Details zur Funktionsweise und Architektur.
 
 ## Getting Started
 

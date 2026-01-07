@@ -1,5 +1,6 @@
-import type { Person } from './utils/ct-types';
 import { churchtoolsClient } from '@churchtools/churchtools-client';
+import { GroupMemberFieldPickerApp } from './app';
+import './styles.css';
 
 // only import reset.css in development mode to keep the production bundle small and to simulate CT environment
 if (import.meta.env.MODE === 'development') {
@@ -25,10 +26,6 @@ if (import.meta.env.MODE === 'development' && username && password) {
 const KEY = import.meta.env.VITE_KEY;
 export { KEY };
 
-const user = await churchtoolsClient.get<Person>(`/whoami`);
-
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <div style="display: flex; place-content: center; place-items: center; height: 100vh;">
-    <h1>Welcome ${[user.firstName, user.lastName].join(' ')}</h1>
-  </div>
-`;
+// Initialize the app
+const app = new GroupMemberFieldPickerApp('#app');
+await app.init();

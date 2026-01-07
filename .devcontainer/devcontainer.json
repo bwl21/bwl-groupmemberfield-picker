@@ -30,5 +30,5 @@
 	// "remoteUser": "root"
 
 	// Disable IPv6 to avoid issues with vite dev, see https://github.com/vitejs/vite/issues/16522#issuecomment-2084322973
-	"runArgs": [ "--sysctl", "net.ipv6.conf.all.disable_ipv6=1"]
+	// "runArgs": [ "--sysctl", "net.ipv6.conf.all.disable_ipv6=1"]
 }
