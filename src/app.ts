@@ -20,8 +20,10 @@ interface AppState {
     targetGroup: Group | null;
     sourceGroup: Group | null;
     allGroups: Group[];
-    filteredGroups: Group[];
-    searchQuery: string;
+    filteredTargetGroups: Group[];
+    filteredSourceGroups: Group[];
+    targetSearchQuery: string;
+    sourceSearchQuery: string;
     configField: { fieldName: string; value: string | undefined } | null;
     targetFields: GroupMemberFieldGroup[];
     sourceFields: GroupMemberFieldGroup[];
@@ -35,8 +37,10 @@ export class GroupMemberFieldPickerApp {
         targetGroup: null,
         sourceGroup: null,
         allGroups: [],
-        filteredGroups: [],
-        searchQuery: '',
+        filteredTargetGroups: [],
+        filteredSourceGroups: [],
+        targetSearchQuery: '',
+        sourceSearchQuery: '',
         configField: null,
         targetFields: [],
         sourceFields: [],
@@ -115,6 +119,26 @@ export class GroupMemberFieldPickerApp {
                     if (parsed) {
                         this.state.configuration = parsed;
                         console.log('✓ Loaded existing configuration');
+                        
+                        // Load source group from configuration if it exists
+                        if (parsed.selectedFields.length > 0) {
+                            const sourceGroupId = parsed.selectedFields[0].sourceGroupId;
+                            const sourceGroup = this.state.allGroups.find(g => g.id === sourceGroupId);
+                            
+                            if (sourceGroup) {
+                                console.log('✓ Loading source group from configuration:', sourceGroup.name);
+                                this.state.sourceGroup = sourceGroup;
+                                
+                                // Load source fields
+                                try {
+                                    const sourceFields = await getGroupSpecificMemberFields(sourceGroupId);
+                                    this.state.sourceFields = sourceFields;
+                                    console.log('✓ Loaded source fields:', sourceFields.length);
+                                } catch (error) {
+                                    console.error('Error loading source fields:', error);
+                                }
+                            }
+                        }
                     } else {
                         // Invalid JSON - create empty config
                         console.warn('Invalid configuration JSON, creating empty config');
@@ -141,32 +165,136 @@ export class GroupMemberFieldPickerApp {
         }
     }
 
-    private onSearchQueryChange(query: string): void {
-        this.state.searchQuery = query;
+    private onTargetSearchChange(query: string): void {
+        this.state.targetSearchQuery = query;
         
         if (query.trim() === '') {
-            this.state.filteredGroups = [];
+            this.state.filteredTargetGroups = [];
         } else {
             const lowerQuery = query.toLowerCase();
-            this.state.filteredGroups = this.state.allGroups
+            this.state.filteredTargetGroups = this.state.allGroups
+                .filter((g) => g.name.toLowerCase().includes(lowerQuery))
+                .slice(0, 10);
+        }
+        
+        // Only update the results list, not the entire page
+        this.updateTargetGroupResults();
+    }
+
+    private updateTargetGroupResults(): void {
+        const resultsContainer = document.getElementById('target-group-results');
+        if (!resultsContainer) return;
+
+        if (this.state.filteredTargetGroups.length > 0) {
+            resultsContainer.innerHTML = `
+                <div class="border rounded max-h-64 overflow-y-auto mb-3">
+                    ${this.state.filteredTargetGroups.map((g) => `
+                        <div 
+                            class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 target-group-option"
+                            data-group-id="${g.id}"
+                        >
+                            <div class="font-medium">${g.name}</div>
+                            <div class="text-sm text-gray-600">ID: ${g.id}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else if (this.state.targetSearchQuery) {
+            resultsContainer.innerHTML = `
+                <div class="p-message p-message-info mb-3">
+                    <i class="pi pi-info-circle"></i>
+                    <span>Keine Gruppen gefunden</span>
+                </div>
+            `;
+        } else {
+            resultsContainer.innerHTML = '';
+        }
+
+        // Re-attach event listeners for the new elements
+        document.querySelectorAll('.target-group-option').forEach((option) => {
+            option.addEventListener('click', () => {
+                const groupId = parseInt((option as HTMLElement).dataset.groupId || '0');
+                if (groupId) {
+                    this.onTargetGroupSelect(groupId);
+                }
+            });
+        });
+    }
+
+    private async onTargetGroupSelect(groupId: number): Promise<void> {
+        const group = this.state.allGroups.find((g) => g.id === groupId);
+        if (!group) return;
+
+        await this.onTargetGroupChange(groupId);
+    }
+
+    private onSourceSearchChange(query: string): void {
+        this.state.sourceSearchQuery = query;
+        
+        if (query.trim() === '') {
+            this.state.filteredSourceGroups = [];
+        } else {
+            const lowerQuery = query.toLowerCase();
+            this.state.filteredSourceGroups = this.state.allGroups
                 .filter((g) => 
                     g.id !== this.state.targetGroup?.id && 
                     g.name.toLowerCase().includes(lowerQuery)
                 )
-                .slice(0, 10); // Limit to 10 results
+                .slice(0, 10);
         }
         
-        this.render();
+        // Only update the results list, not the entire page
+        this.updateSourceGroupResults();
     }
 
-    private async onSourceGroupChange(groupId: number): Promise<void> {
+    private updateSourceGroupResults(): void {
+        const resultsContainer = document.getElementById('source-group-results');
+        if (!resultsContainer) return;
+
+        if (this.state.filteredSourceGroups.length > 0) {
+            resultsContainer.innerHTML = `
+                <div class="border rounded max-h-64 overflow-y-auto">
+                    ${this.state.filteredSourceGroups.map((g) => `
+                        <div 
+                            class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 source-group-option"
+                            data-group-id="${g.id}"
+                        >
+                            <div class="font-medium">${g.name}</div>
+                            <div class="text-sm text-gray-600">ID: ${g.id}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else if (this.state.sourceSearchQuery) {
+            resultsContainer.innerHTML = `
+                <div class="p-message p-message-info">
+                    <i class="pi pi-info-circle"></i>
+                    <span>Keine Gruppen gefunden</span>
+                </div>
+            `;
+        } else {
+            resultsContainer.innerHTML = '';
+        }
+
+        // Re-attach event listeners for the new elements
+        document.querySelectorAll('.source-group-option').forEach((option) => {
+            option.addEventListener('click', () => {
+                const groupId = parseInt((option as HTMLElement).dataset.groupId || '0');
+                if (groupId) {
+                    this.onSourceGroupSelect(groupId);
+                }
+            });
+        });
+    }
+
+    private async onSourceGroupSelect(groupId: number): Promise<void> {
         const group = this.state.allGroups.find((g) => g.id === groupId);
         if (!group) return;
 
         this.state.sourceGroup = group;
         this.state.sourceFields = [];
-        this.state.searchQuery = '';
-        this.state.filteredGroups = [];
+        this.state.sourceSearchQuery = '';
+        this.state.filteredSourceGroups = [];
         this.state.loading = true;
         this.render();
 
@@ -224,29 +352,55 @@ export class GroupMemberFieldPickerApp {
     }
 
     private renderStep1(): string {
+        const groupsToShow = this.state.targetSearchQuery 
+            ? this.state.filteredTargetGroups 
+            : this.state.allGroups.slice(0, 10);
+
         return `
             <div class="mb-6">
                 <h2 class="text-xl font-semibold mb-3">Schritt 1: Zielgruppe</h2>
-                <div class="mb-3">
-                    <label for="target-group" class="block mb-2">Zielgruppe auswählen</label>
-                    <select 
-                        id="target-group" 
-                        class="p-dropdown w-full p-2 border rounded"
-                        ${this.state.allGroups.length === 0 ? 'disabled' : ''}
-                    >
-                        <option value="">-- Gruppe auswählen --</option>
-                        ${this.state.allGroups
-                            .map(
-                                (g) =>
-                                    `<option value="${g.id}" ${
-                                        this.state.targetGroup?.id === g.id
-                                            ? 'selected'
-                                            : ''
-                                    }>${g.name}</option>`
-                            )
-                            .join('')}
-                    </select>
-                </div>
+                
+                ${this.state.targetGroup ? `
+                    <div class="p-message p-message-success mb-3">
+                        <i class="pi pi-check-circle"></i>
+                        <span>Ausgewählt: <strong>${this.state.targetGroup.name}</strong></span>
+                        <button id="clear-target-group" class="ml-2 text-sm underline">
+                            Ändern
+                        </button>
+                    </div>
+                ` : `
+                    <div class="mb-3">
+                        <label for="target-group-search" class="block mb-2">Zielgruppe suchen</label>
+                        <input 
+                            type="text" 
+                            id="target-group-search" 
+                            class="w-full p-2 border rounded"
+                            placeholder="Gruppenname eingeben..."
+                            value="${this.state.targetSearchQuery}"
+                        />
+                    </div>
+                    
+                    <div id="target-group-results">
+                        ${groupsToShow.length > 0 ? `
+                            <div class="border rounded max-h-64 overflow-y-auto mb-3">
+                                ${groupsToShow.map((g) => `
+                                    <div 
+                                        class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 target-group-option"
+                                        data-group-id="${g.id}"
+                                    >
+                                        <div class="font-medium">${g.name}</div>
+                                        <div class="text-sm text-gray-600">ID: ${g.id}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : this.state.targetSearchQuery ? `
+                            <div class="p-message p-message-info mb-3">
+                                <i class="pi pi-info-circle"></i>
+                                <span>Keine Gruppen gefunden</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `}
                 
                 ${this.renderConfigFieldStatus()}
             </div>
@@ -321,28 +475,30 @@ export class GroupMemberFieldPickerApp {
                             id="source-group-search" 
                             class="w-full p-2 border rounded"
                             placeholder="Gruppenname eingeben..."
-                            value="${this.state.searchQuery}"
+                            value="${this.state.sourceSearchQuery}"
                         />
                     </div>
                     
-                    ${this.state.searchQuery && this.state.filteredGroups.length > 0 ? `
-                        <div class="border rounded max-h-64 overflow-y-auto">
-                            ${this.state.filteredGroups.map((g) => `
-                                <div 
-                                    class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 source-group-option"
-                                    data-group-id="${g.id}"
-                                >
-                                    <div class="font-medium">${g.name}</div>
-                                    <div class="text-sm text-gray-600">ID: ${g.id}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : this.state.searchQuery ? `
-                        <div class="p-message p-message-info">
-                            <i class="pi pi-info-circle"></i>
-                            <span>Keine Gruppen gefunden</span>
-                        </div>
-                    ` : ''}
+                    <div id="source-group-results">
+                        ${this.state.filteredSourceGroups.length > 0 ? `
+                            <div class="border rounded max-h-64 overflow-y-auto">
+                                ${this.state.filteredSourceGroups.map((g) => `
+                                    <div 
+                                        class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 source-group-option"
+                                        data-group-id="${g.id}"
+                                    >
+                                        <div class="font-medium">${g.name}</div>
+                                        <div class="text-sm text-gray-600">ID: ${g.id}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : this.state.sourceSearchQuery ? `
+                            <div class="p-message p-message-info">
+                                <i class="pi pi-info-circle"></i>
+                                <span>Keine Gruppen gefunden</span>
+                            </div>
+                        ` : ''}
+                    </div>
                 `}
             </div>
         `;
@@ -459,24 +615,41 @@ export class GroupMemberFieldPickerApp {
     }
 
     private attachEventListeners(): void {
-        const targetGroupSelect =
-            document.querySelector<HTMLSelectElement>('#target-group');
-        if (targetGroupSelect) {
-            targetGroupSelect.addEventListener('change', (e) => {
-                const groupId = parseInt(
-                    (e.target as HTMLSelectElement).value
-                );
-                if (groupId) {
-                    this.onTargetGroupChange(groupId);
-                }
+        // Target group search
+        const targetSearchInput = document.querySelector<HTMLInputElement>('#target-group-search');
+        if (targetSearchInput) {
+            targetSearchInput.addEventListener('input', (e) => {
+                const query = (e.target as HTMLInputElement).value;
+                this.onTargetSearchChange(query);
             });
         }
 
-        const searchInput = document.querySelector<HTMLInputElement>('#source-group-search');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
+        document.querySelectorAll('.target-group-option').forEach((option) => {
+            option.addEventListener('click', () => {
+                const groupId = parseInt((option as HTMLElement).dataset.groupId || '0');
+                if (groupId) {
+                    this.onTargetGroupSelect(groupId);
+                }
+            });
+        });
+
+        const clearTargetButton = document.querySelector('#clear-target-group');
+        if (clearTargetButton) {
+            clearTargetButton.addEventListener('click', () => {
+                this.state.targetGroup = null;
+                this.state.targetFields = [];
+                this.state.configField = null;
+                this.state.configuration = null;
+                this.render();
+            });
+        }
+
+        // Source group search
+        const sourceSearchInput = document.querySelector<HTMLInputElement>('#source-group-search');
+        if (sourceSearchInput) {
+            sourceSearchInput.addEventListener('input', (e) => {
                 const query = (e.target as HTMLInputElement).value;
-                this.onSearchQueryChange(query);
+                this.onSourceSearchChange(query);
             });
         }
 
@@ -484,7 +657,7 @@ export class GroupMemberFieldPickerApp {
             option.addEventListener('click', () => {
                 const groupId = parseInt((option as HTMLElement).dataset.groupId || '0');
                 if (groupId) {
-                    this.onSourceGroupChange(groupId);
+                    this.onSourceGroupSelect(groupId);
                 }
             });
         });
@@ -556,12 +729,10 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
     }
 
     private onFieldSelectionChange(groupId: number, fieldId: number, selected: boolean): void {
-        if (!this.state.configuration) return;
+        if (!this.state.configuration || !this.state.sourceGroup) return;
 
-        const group = this.state.sourceGroups.find(g => g.id === groupId);
-        const field = this.state.sourceFieldsByGroup.get(groupId)?.find(f => f.id === fieldId);
-
-        if (!group || !field) return;
+        const field = this.state.sourceFields.find(f => f.id === fieldId);
+        if (!field) return;
 
         if (selected) {
             // Add to selection
@@ -571,8 +742,8 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
 
             if (!alreadySelected) {
                 this.state.configuration.selectedFields.push({
-                    sourceGroupId: groupId,
-                    sourceGroupName: group.name,
+                    sourceGroupId: this.state.sourceGroup.id,
+                    sourceGroupName: this.state.sourceGroup.name,
                     fieldId: field.id,
                     fieldName: field.name,
                     fieldType: field.fieldTypeCode,
@@ -614,6 +785,11 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
         };
 
         try {
+            // Get existing reference names to check for duplicates
+            const existingReferenceNames = new Set(
+                this.state.targetFields.map(f => f.referenceName)
+            );
+
             // Create fields one by one
             for (const selectedField of this.state.configuration.selectedFields) {
                 try {
@@ -624,6 +800,16 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
                         results.failed.push({
                             field: selectedField.fieldName || `Field ${selectedField.fieldId}`,
                             error: 'Quellfeldefinition nicht gefunden',
+                        });
+                        continue;
+                    }
+
+                    // Check if field already exists
+                    if (existingReferenceNames.has(sourceField.referenceName)) {
+                        console.log('⚠️ Field already exists, skipping:', sourceField.name);
+                        results.failed.push({
+                            field: sourceField.name,
+                            error: 'Feld existiert bereits in der Zielgruppe',
                         });
                         continue;
                     }
@@ -669,6 +855,21 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
             // Reload target fields to show newly created fields
             if (results.success.length > 0) {
                 this.state.targetFields = await getGroupSpecificMemberFields(this.state.targetGroup.id);
+                
+                // Save configuration after successful field creation
+                try {
+                    this.state.configuration.lastUpdated = new Date().toISOString();
+                    const configJson = serializeConfiguration(this.state.configuration);
+                    
+                    await updateGroupCustomFields(this.state.targetGroup.id, {
+                        bwl_gmfp_config: configJson,
+                    });
+                    
+                    console.log('✓ Configuration saved after field creation');
+                } catch (saveError) {
+                    console.error('Error saving configuration:', saveError);
+                    // Don't fail the whole operation if config save fails
+                }
             }
 
             this.state.loading = false;
