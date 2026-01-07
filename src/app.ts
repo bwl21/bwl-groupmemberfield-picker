@@ -41,14 +41,16 @@ export class GroupMemberFieldPickerApp {
             this.state.loading = true;
             this.render();
 
-            const response = await churchtoolsClient.get<{ data: Group[] }>(
-                '/groups'
-            );
-            this.state.allGroups = response.data;
+            const response = await churchtoolsClient.get<Group[]>('/groups');
+            
+            console.log('Groups response:', response);
+            
+            this.state.allGroups = Array.isArray(response) ? response : [];
             this.state.loading = false;
             this.render();
         } catch (error) {
-            this.state.error = `Fehler beim Laden der Gruppen: ${error}`;
+            console.error('Error loading groups:', error);
+            this.state.error = `Fehler beim Laden der Gruppen: ${error instanceof Error ? error.message : String(error)}`;
             this.state.loading = false;
             this.render();
         }
@@ -59,6 +61,8 @@ export class GroupMemberFieldPickerApp {
         if (!group) return;
 
         this.state.targetGroup = group;
+        this.state.configField = null;
+        this.state.error = null;
         this.state.loading = true;
         this.render();
 
@@ -67,7 +71,9 @@ export class GroupMemberFieldPickerApp {
             this.state.loading = false;
             this.render();
         } catch (error) {
-            this.state.error = `Fehler beim Prüfen des Konfigurationsfeldes: ${error}`;
+            console.error('Error checking config field:', error);
+            // Don't show error - just treat as "no config field found"
+            this.state.configField = null;
             this.state.loading = false;
             this.render();
         }
@@ -168,17 +174,23 @@ export class GroupMemberFieldPickerApp {
                     <i class="pi pi-exclamation-triangle text-xl"></i>
                     <div>
                         <p class="font-semibold mb-2">⚠️ Konfigurationsfeld fehlt</p>
-                        <p class="mb-2">Bitte legen Sie folgendes <strong>GRUPPENFELD</strong> (nicht Gruppenmitgliedsfeld!) manuell an:</p>
+                        <p class="mb-2">Das benötigte <strong>GRUPPENFELD</strong> (nicht Gruppenmitgliedsfeld!) wurde nicht gefunden.</p>
+                        <p class="mb-3">Erforderliche Eigenschaften:</p>
                         <ul class="list-disc ml-5 mb-3">
-                            <li><strong>Name:</strong> Feldübernahme-Konfiguration</li>
+                            <li><strong>Feldname:</strong> <code>bwl_gmfp_config</code></li>
                             <li><strong>Typ:</strong> Textarea</li>
-                            <li><strong>Referenzname:</strong> field_mapping_config</li>
                             <li><strong>Ort:</strong> Stammdaten → Gruppen → Felder (Custom Group Fields)</li>
                         </ul>
-                        <button id="copy-instruction" class="p-button p-button-sm">
-                            <i class="pi pi-copy"></i>
-                            Anleitung kopieren
-                        </button>
+                        <div class="flex gap-2">
+                            <button id="create-config-field" class="p-button p-button-sm">
+                                <i class="pi pi-plus"></i>
+                                Feld jetzt anlegen
+                            </button>
+                            <button id="copy-instruction" class="p-button p-button-sm p-button-secondary">
+                                <i class="pi pi-copy"></i>
+                                Anleitung kopieren
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -233,6 +245,26 @@ export class GroupMemberFieldPickerApp {
         `;
     }
 
+    private async createConfigField(): Promise<void> {
+        if (!this.state.targetGroup) return;
+
+        this.state.loading = true;
+        this.render();
+
+        try {
+            // Note: We need to use the masterdata API to create custom group fields
+            // This is a placeholder - the actual implementation depends on ChurchTools API
+            alert('Hinweis: Das automatische Anlegen von Gruppenfeldern ist noch nicht implementiert.\n\nBitte legen Sie das Feld manuell an unter:\nStammdaten → Gruppen → Felder (Custom Group Fields)');
+            
+            this.state.loading = false;
+            this.render();
+        } catch (error) {
+            this.state.error = `Fehler beim Anlegen des Feldes: ${error}`;
+            this.state.loading = false;
+            this.render();
+        }
+    }
+
     private attachEventListeners(): void {
         const targetGroupSelect =
             document.querySelector<HTMLSelectElement>('#target-group');
@@ -256,6 +288,13 @@ export class GroupMemberFieldPickerApp {
                     (opt) => parseInt(opt.value)
                 );
                 this.onSourceGroupsChange(selectedIds);
+            });
+        }
+
+        const createButton = document.querySelector('#create-config-field');
+        if (createButton) {
+            createButton.addEventListener('click', () => {
+                this.createConfigField();
             });
         }
 

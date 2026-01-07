@@ -131,13 +131,12 @@ const exampleConfig: FieldMappingConfiguration = {
 
 Das Konfigurationsfeld ist ein **Custom Group Field** (benutzerdefiniertes Gruppenfeld), das in der Zielgruppe angelegt werden muss:
 
+- **Feldname**: `bwl_gmfp_config` (exakt dieser Name)
 - **Typ**: `textarea` (für JSON-Speicherung)
-- **Name**: Enthält "config" oder "konfiguration" (case-insensitive)
-- **Referenzname**: z.B. `field_mapping_config`
 - **Inhalt**: JSON-String der `FieldMappingConfiguration`
 - **Speicherort**: Direkt auf der Gruppe (nicht bei den Gruppenmitgliedern)
 
-Die Extension erkennt das Konfigurationsfeld automatisch anhand des Namens.
+Die Extension sucht gezielt nach dem Feld `bwl_gmfp_config`.
 
 **Unterschied zu Gruppenmitgliedsfeldern:**
 - **Gruppenfeld (Group Custom Field)**: Gehört zur Gruppe selbst (z.B. "Beschreibung", "Budget") → Hier wird die Konfiguration gespeichert
