@@ -7,8 +7,7 @@ import {
     createGroupMemberField
 } from './utils/group-member-fields';
 import type { 
-    FieldSelectionConfiguration,
-    SelectedField
+    FieldSelectionConfiguration
 } from './utils/field-mapping-types';
 import { 
     parseConfiguration, 
@@ -109,7 +108,7 @@ export class GroupMemberFieldPickerApp {
             console.log('Loaded configField:', configField);
             console.log('Loaded targetFields:', targetFields);
 
-            this.state.configField = configField;
+            this.state.configField = configField || null;
             this.state.targetFields = targetFields;
 
             // If config field exists
