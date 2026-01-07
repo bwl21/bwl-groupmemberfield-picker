@@ -11,10 +11,34 @@ import type {
 export async function getGroupMemberFields(
     groupId: number
 ): Promise<GroupMemberField[]> {
-    const response = await churchtoolsClient.get<{ data: GroupMemberField[] }>(
-        `/groups/${groupId}/memberfields`
-    );
-    return response.data;
+    try {
+        const response = await churchtoolsClient.get(
+            `/groups/${groupId}/memberfields`
+        );
+        
+        console.log('Member fields raw response:', response);
+        console.log('Response type:', typeof response);
+        console.log('Is array?', Array.isArray(response));
+        console.log('Has data?', response && 'data' in response);
+        
+        // Check if response has 'data' property (client didn't unpack)
+        if (response && typeof response === 'object' && 'data' in response) {
+            console.log('Unpacking data property');
+            return (response as any).data as GroupMemberField[];
+        }
+        
+        // Otherwise assume it's already unpacked
+        if (Array.isArray(response)) {
+            console.log('Response is already an array');
+            return response as GroupMemberField[];
+        }
+        
+        console.warn('Unexpected response format:', response);
+        return [];
+    } catch (error) {
+        console.error('Error fetching member fields:', error);
+        return [];
+    }
 }
 
 /**
@@ -24,9 +48,22 @@ export async function getGroupSpecificMemberFields(
     groupId: number
 ): Promise<GroupMemberFieldGroup[]> {
     const fields = await getGroupMemberFields(groupId);
-    return fields
-        .filter((f) => f.type === 'group')
-        .map((f) => f.field as GroupMemberFieldGroup);
+    
+    console.log('All fields:', fields);
+    console.log('Fields count:', fields.length);
+    
+    const groupFields = fields.filter((f) => {
+        console.log('Field:', f, 'Type:', f.type);
+        return f.type === 'group';
+    });
+    
+    console.log('Group fields after filter:', groupFields);
+    
+    const result = groupFields.map((f) => f.field as GroupMemberFieldGroup);
+    
+    console.log('Final result:', result);
+    
+    return result;
 }
 
 
@@ -57,15 +94,23 @@ export async function getGroupCustomField<T = string>(
 }
 
 /**
- * Update custom fields on a group (updates group.information)
+ * Update custom fields on a group
+ * Custom group fields are set directly on the group object, not in information
  */
 export async function updateGroupCustomFields(
     groupId: number,
     fields: Record<string, any>
 ): Promise<void> {
-    await churchtoolsClient.patch(`/groups/${groupId}`, {
-        information: fields,
-    });
+    console.log('=== updateGroupCustomFields ===');
+    console.log('Group ID:', groupId);
+    console.log('Fields to update:', fields);
+    
+    console.log('Sending PATCH request...');
+    
+    // Custom group fields are set directly on the group, not in information
+    const response = await churchtoolsClient.patch(`/groups/${groupId}`, fields);
+    
+    console.log('PATCH response:', response);
 }
 
 // Configuration field name
@@ -74,6 +119,7 @@ const CONFIG_FIELD_NAME = 'bwl_gmfp_config';
 /**
  * Find the configuration field in a group
  * Looks for the specific field: bwl_gmfp_config in group.information
+ * Returns the field even if it's empty (value will be undefined)
  */
 export async function findConfigurationField(
     groupId: number
@@ -93,12 +139,16 @@ export async function findConfigurationField(
         if (group.information && typeof group.information === 'object') {
             const info = group.information as any;
             
+            // Check if the field exists (even if empty)
             if (CONFIG_FIELD_NAME in info) {
                 const value = info[CONFIG_FIELD_NAME];
-                console.log(`✓ Found config field in information: ${CONFIG_FIELD_NAME} = ${value}`);
+                const stringValue = typeof value === 'string' && value !== '' ? value : undefined;
+                console.log(`✓ Found config field in information: ${CONFIG_FIELD_NAME} = ${stringValue || '(empty)'}`);
+                
+                // Return the field even if empty - this indicates the field exists in ChurchTools
                 return {
                     fieldName: CONFIG_FIELD_NAME,
-                    value: typeof value === 'string' ? value : undefined,
+                    value: stringValue,
                 };
             }
         }
@@ -116,6 +166,44 @@ export async function findConfigurationField(
  */
 export function getConfigFieldName(): string {
     return CONFIG_FIELD_NAME;
+}
+
+/**
+ * Create a new group member field in a group
+ */
+export async function createGroupMemberField(
+    groupId: number,
+    fieldDefinition: {
+        name: string;
+        fieldTypeCode: string;
+        note?: string;
+        defaultValue?: string;
+        options?: Array<{ id: string; name: string }>;
+        securityLevel?: string;
+        useInRegistrationForm?: boolean;
+        requiredInRegistrationForm?: boolean;
+        sortKey?: number;
+    }
+): Promise<GroupMemberFieldGroup> {
+    console.log('Creating field in group', groupId, ':', fieldDefinition);
+    
+    const response = await churchtoolsClient.post(
+        `/groups/${groupId}/memberfields/group`,
+        {
+            useInRegistrationForm: fieldDefinition.useInRegistrationForm ?? false,
+            requiredInRegistrationForm: fieldDefinition.requiredInRegistrationForm ?? false,
+            securityLevel: fieldDefinition.securityLevel ?? '1',
+            fieldTypeCode: fieldDefinition.fieldTypeCode,
+            name: fieldDefinition.name,
+            note: fieldDefinition.note ?? '',
+            defaultValue: fieldDefinition.defaultValue ?? '',
+            options: fieldDefinition.options ?? [],
+            sortKey: fieldDefinition.sortKey ?? 1,
+        }
+    );
+    
+    console.log('Field created:', response);
+    return response as GroupMemberFieldGroup;
 }
 
 /**

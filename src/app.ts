@@ -1,12 +1,31 @@
 import { churchtoolsClient } from '@churchtools/churchtools-client';
-import type { Group } from './utils/ct-types';
-import { findConfigurationField } from './utils/group-member-fields';
+import type { Group, GroupMemberFieldGroup } from './utils/ct-types';
+import { 
+    findConfigurationField, 
+    getGroupSpecificMemberFields,
+    updateGroupCustomFields,
+    createGroupMemberField
+} from './utils/group-member-fields';
+import type { 
+    FieldSelectionConfiguration,
+    SelectedField
+} from './utils/field-mapping-types';
+import { 
+    parseConfiguration, 
+    createEmptyConfiguration, 
+    serializeConfiguration 
+} from './utils/field-mapping-types';
 
 interface AppState {
     targetGroup: Group | null;
-    sourceGroups: Group[];
+    sourceGroup: Group | null;
     allGroups: Group[];
+    filteredGroups: Group[];
+    searchQuery: string;
     configField: { fieldName: string; value: string | undefined } | null;
+    targetFields: GroupMemberFieldGroup[];
+    sourceFields: GroupMemberFieldGroup[];
+    configuration: FieldSelectionConfiguration | null;
     loading: boolean;
     error: string | null;
 }
@@ -14,9 +33,14 @@ interface AppState {
 export class GroupMemberFieldPickerApp {
     private state: AppState = {
         targetGroup: null,
-        sourceGroups: [],
+        sourceGroup: null,
         allGroups: [],
+        filteredGroups: [],
+        searchQuery: '',
         configField: null,
+        targetFields: [],
+        sourceFields: [],
+        configuration: null,
         loading: false,
         error: null,
     };
@@ -62,28 +86,102 @@ export class GroupMemberFieldPickerApp {
 
         this.state.targetGroup = group;
         this.state.configField = null;
+        this.state.targetFields = [];
+        this.state.configuration = null;
         this.state.error = null;
         this.state.loading = true;
         this.render();
 
         try {
-            this.state.configField = await findConfigurationField(groupId);
+            console.log('=== Loading target group data for group', groupId, '===');
+            
+            // Load config field and target fields in parallel
+            const [configField, targetFields] = await Promise.all([
+                findConfigurationField(groupId),
+                getGroupSpecificMemberFields(groupId)
+            ]);
+
+            console.log('Loaded configField:', configField);
+            console.log('Loaded targetFields:', targetFields);
+
+            this.state.configField = configField;
+            this.state.targetFields = targetFields;
+
+            // If config field exists
+            if (configField) {
+                if (configField.value) {
+                    // Parse existing configuration
+                    const parsed = parseConfiguration(configField.value);
+                    if (parsed) {
+                        this.state.configuration = parsed;
+                        console.log('✓ Loaded existing configuration');
+                    } else {
+                        // Invalid JSON - create empty config
+                        console.warn('Invalid configuration JSON, creating empty config');
+                        this.state.configuration = createEmptyConfiguration(groupId);
+                    }
+                } else {
+                    // Field exists but is empty - create empty configuration
+                    console.log('Config field is empty, creating new configuration');
+                    this.state.configuration = createEmptyConfiguration(groupId);
+                }
+            }
+
+            console.log('Final state - targetFields:', this.state.targetFields);
+            console.log('Final state - configuration:', this.state.configuration);
+
             this.state.loading = false;
             this.render();
         } catch (error) {
-            console.error('Error checking config field:', error);
-            // Don't show error - just treat as "no config field found"
+            console.error('Error loading target group data:', error);
             this.state.configField = null;
+            this.state.targetFields = [];
             this.state.loading = false;
             this.render();
         }
     }
 
-    private onSourceGroupsChange(groupIds: number[]): void {
-        this.state.sourceGroups = this.state.allGroups.filter((g) =>
-            groupIds.includes(g.id)
-        );
+    private onSearchQueryChange(query: string): void {
+        this.state.searchQuery = query;
+        
+        if (query.trim() === '') {
+            this.state.filteredGroups = [];
+        } else {
+            const lowerQuery = query.toLowerCase();
+            this.state.filteredGroups = this.state.allGroups
+                .filter((g) => 
+                    g.id !== this.state.targetGroup?.id && 
+                    g.name.toLowerCase().includes(lowerQuery)
+                )
+                .slice(0, 10); // Limit to 10 results
+        }
+        
         this.render();
+    }
+
+    private async onSourceGroupChange(groupId: number): Promise<void> {
+        const group = this.state.allGroups.find((g) => g.id === groupId);
+        if (!group) return;
+
+        this.state.sourceGroup = group;
+        this.state.sourceFields = [];
+        this.state.searchQuery = '';
+        this.state.filteredGroups = [];
+        this.state.loading = true;
+        this.render();
+
+        try {
+            const fields = await getGroupSpecificMemberFields(groupId);
+            this.state.sourceFields = fields;
+            
+            this.state.loading = false;
+            this.render();
+        } catch (error) {
+            console.error('Error loading source group fields:', error);
+            this.state.error = `Fehler beim Laden der Quellgruppenfelder: ${error}`;
+            this.state.loading = false;
+            this.render();
+        }
     }
 
     private render(): void {
@@ -120,6 +218,7 @@ export class GroupMemberFieldPickerApp {
                 
                 ${this.renderStep1()}
                 ${this.renderStep2()}
+                ${this.renderStep3()}
             </div>
         `;
     }
@@ -204,43 +303,137 @@ export class GroupMemberFieldPickerApp {
 
         return `
             <div class="mb-6">
-                <h2 class="text-xl font-semibold mb-3">Schritt 2: Quellgruppen</h2>
-                <div class="mb-3">
-                    <label for="source-groups" class="block mb-2">Quellgruppen auswählen (mehrfach)</label>
-                    <select 
-                        id="source-groups" 
-                        class="p-multiselect w-full p-2 border rounded"
-                        multiple
-                        size="8"
-                    >
-                        ${this.state.allGroups
-                            .filter((g) => g.id !== this.state.targetGroup?.id)
-                            .map(
-                                (g) =>
-                                    `<option value="${g.id}" ${
-                                        this.state.sourceGroups.some(
-                                            (sg) => sg.id === g.id
-                                        )
-                                            ? 'selected'
-                                            : ''
-                                    }>${g.name}</option>`
-                            )
-                            .join('')}
-                    </select>
-                </div>
+                <h2 class="text-xl font-semibold mb-3">Schritt 2: Quellgruppe</h2>
                 
-                ${
-                    this.state.sourceGroups.length > 0
-                        ? `
+                ${this.state.sourceGroup ? `
+                    <div class="p-message p-message-success mb-3">
+                        <i class="pi pi-check-circle"></i>
+                        <span>Ausgewählt: <strong>${this.state.sourceGroup.name}</strong></span>
+                        <button id="clear-source-group" class="ml-2 text-sm underline">
+                            Ändern
+                        </button>
+                    </div>
+                ` : `
+                    <div class="mb-3">
+                        <label for="source-group-search" class="block mb-2">Quellgruppe suchen</label>
+                        <input 
+                            type="text" 
+                            id="source-group-search" 
+                            class="w-full p-2 border rounded"
+                            placeholder="Gruppenname eingeben..."
+                            value="${this.state.searchQuery}"
+                        />
+                    </div>
+                    
+                    ${this.state.searchQuery && this.state.filteredGroups.length > 0 ? `
+                        <div class="border rounded max-h-64 overflow-y-auto">
+                            ${this.state.filteredGroups.map((g) => `
+                                <div 
+                                    class="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 source-group-option"
+                                    data-group-id="${g.id}"
+                                >
+                                    <div class="font-medium">${g.name}</div>
+                                    <div class="text-sm text-gray-600">ID: ${g.id}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : this.state.searchQuery ? `
+                        <div class="p-message p-message-info">
+                            <i class="pi pi-info-circle"></i>
+                            <span>Keine Gruppen gefunden</span>
+                        </div>
+                    ` : ''}
+                `}
+            </div>
+        `;
+    }
+
+    private renderStep3(): string {
+        if (!this.state.targetGroup || !this.state.configField || !this.state.sourceGroup) {
+            return '';
+        }
+
+        if (this.state.sourceFields.length === 0) {
+            return `
+                <div class="mb-6">
+                    <h2 class="text-xl font-semibold mb-3">Schritt 3: Felder auswählen</h2>
                     <div class="p-message p-message-info">
                         <i class="pi pi-info-circle"></i>
-                        <span>Ausgewählt: ${this.state.sourceGroups
-                            .map((g) => g.name)
-                            .join(', ')}</span>
+                        <span>Die Quellgruppe "${this.state.sourceGroup.name}" hat keine Gruppenmitgliedsfelder.</span>
                     </div>
-                `
-                        : ''
-                }
+                </div>
+            `;
+        }
+
+        return `
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-3">Schritt 3: Felder auswählen</h2>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-3">
+                        Wählen Sie aus, welche Felder aus der Quellgruppe "${this.state.sourceGroup.name}" 
+                        in die Zielgruppe übernommen werden sollen.
+                        Die Felddefinitionen (Name, Typ, Optionen) werden kopiert.
+                    </p>
+                </div>
+
+                ${this.renderFieldSelection()}
+                
+                <div class="flex gap-2 mt-4">
+                    <button id="create-fields" class="p-button">
+                        <i class="pi pi-plus"></i>
+                        Ausgewählte Felder anlegen
+                    </button>
+                    <button id="save-selection" class="p-button p-button-secondary">
+                        <i class="pi pi-save"></i>
+                        Auswahl speichern
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    private renderFieldSelection(): string {
+        if (!this.state.configuration || !this.state.sourceGroup) {
+            return '';
+        }
+
+        // Get all existing reference names in target group
+        const existingReferenceNames = new Set(
+            this.state.targetFields.map(f => f.referenceName)
+        );
+
+        return `
+            <div class="border rounded p-4 mb-4">
+                <div class="space-y-2">
+                    ${this.state.sourceFields.map((field) => {
+                        const alreadyExists = existingReferenceNames.has(field.referenceName);
+                        const isSelected = this.state.configuration?.selectedFields.some(
+                            sf => sf.sourceGroupId === this.state.sourceGroup!.id && sf.fieldId === field.id
+                        ) || false;
+
+                        return `
+                            <div class="flex items-center gap-3 p-2 ${alreadyExists ? 'bg-gray-100' : ''}">
+                                <input 
+                                    type="checkbox" 
+                                    class="field-checkbox"
+                                    data-group-id="${this.state.sourceGroup!.id}"
+                                    data-field-id="${field.id}"
+                                    ${isSelected ? 'checked' : ''}
+                                    ${alreadyExists ? 'disabled' : ''}
+                                />
+                                <div class="flex-1">
+                                    <div class="font-medium">${field.name}</div>
+                                    <div class="text-sm text-gray-600">
+                                        Typ: ${field.fieldTypeCode} | 
+                                        Referenz: ${field.referenceName}
+                                        ${alreadyExists ? ' | <span class="text-orange-600">⚠️ Existiert bereits in Zielgruppe</span>' : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
             </div>
         `;
     }
@@ -279,15 +472,29 @@ export class GroupMemberFieldPickerApp {
             });
         }
 
-        const sourceGroupsSelect =
-            document.querySelector<HTMLSelectElement>('#source-groups');
-        if (sourceGroupsSelect) {
-            sourceGroupsSelect.addEventListener('change', (e) => {
-                const select = e.target as HTMLSelectElement;
-                const selectedIds = Array.from(select.selectedOptions).map(
-                    (opt) => parseInt(opt.value)
-                );
-                this.onSourceGroupsChange(selectedIds);
+        const searchInput = document.querySelector<HTMLInputElement>('#source-group-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const query = (e.target as HTMLInputElement).value;
+                this.onSearchQueryChange(query);
+            });
+        }
+
+        document.querySelectorAll('.source-group-option').forEach((option) => {
+            option.addEventListener('click', () => {
+                const groupId = parseInt((option as HTMLElement).dataset.groupId || '0');
+                if (groupId) {
+                    this.onSourceGroupChange(groupId);
+                }
+            });
+        });
+
+        const clearSourceButton = document.querySelector('#clear-source-group');
+        if (clearSourceButton) {
+            clearSourceButton.addEventListener('click', () => {
+                this.state.sourceGroup = null;
+                this.state.sourceFields = [];
+                this.render();
             });
         }
 
@@ -314,6 +521,192 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
                     alert('Anleitung in Zwischenablage kopiert!');
                 });
             });
+        }
+
+        // Field mapping event listeners
+        this.attachFieldMappingListeners();
+    }
+
+    private attachFieldMappingListeners(): void {
+        // Field checkbox changes
+        document.querySelectorAll<HTMLInputElement>('.field-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', (e) => {
+                const groupId = parseInt(checkbox.dataset.groupId || '0');
+                const fieldId = parseInt(checkbox.dataset.fieldId || '0');
+                const checked = (e.target as HTMLInputElement).checked;
+                this.onFieldSelectionChange(groupId, fieldId, checked);
+            });
+        });
+
+        // Create fields button
+        const createButton = document.querySelector('#create-fields');
+        if (createButton) {
+            createButton.addEventListener('click', () => {
+                this.onCreateFields();
+            });
+        }
+
+        // Save selection button
+        const saveButton = document.querySelector('#save-selection');
+        if (saveButton) {
+            saveButton.addEventListener('click', () => {
+                this.onSaveSelection();
+            });
+        }
+    }
+
+    private onFieldSelectionChange(groupId: number, fieldId: number, selected: boolean): void {
+        if (!this.state.configuration) return;
+
+        const group = this.state.sourceGroups.find(g => g.id === groupId);
+        const field = this.state.sourceFieldsByGroup.get(groupId)?.find(f => f.id === fieldId);
+
+        if (!group || !field) return;
+
+        if (selected) {
+            // Add to selection
+            const alreadySelected = this.state.configuration.selectedFields.some(
+                sf => sf.sourceGroupId === groupId && sf.fieldId === fieldId
+            );
+
+            if (!alreadySelected) {
+                this.state.configuration.selectedFields.push({
+                    sourceGroupId: groupId,
+                    sourceGroupName: group.name,
+                    fieldId: field.id,
+                    fieldName: field.name,
+                    fieldType: field.fieldTypeCode,
+                    selected: true,
+                });
+            }
+        } else {
+            // Remove from selection
+            this.state.configuration.selectedFields = this.state.configuration.selectedFields.filter(
+                sf => !(sf.sourceGroupId === groupId && sf.fieldId === fieldId)
+            );
+        }
+
+        console.log('Updated selection:', this.state.configuration.selectedFields);
+    }
+
+    private async onCreateFields(): Promise<void> {
+        if (!this.state.configuration || !this.state.targetGroup) return;
+
+        const selectedCount = this.state.configuration.selectedFields.length;
+        if (selectedCount === 0) {
+            alert('Bitte wählen Sie mindestens ein Feld aus.');
+            return;
+        }
+
+        const confirmed = confirm(
+            `${selectedCount} Feld(er) werden in der Zielgruppe "${this.state.targetGroup.name}" angelegt.\n\n` +
+            'Möchten Sie fortfahren?'
+        );
+
+        if (!confirmed) return;
+
+        this.state.loading = true;
+        this.render();
+
+        const results: { success: string[]; failed: Array<{ field: string; error: string }> } = {
+            success: [],
+            failed: [],
+        };
+
+        try {
+            // Create fields one by one
+            for (const selectedField of this.state.configuration.selectedFields) {
+                try {
+                    // Get the full field definition from source group
+                    const sourceField = this.state.sourceFields.find(f => f.id === selectedField.fieldId);
+
+                    if (!sourceField) {
+                        results.failed.push({
+                            field: selectedField.fieldName || `Field ${selectedField.fieldId}`,
+                            error: 'Quellfeldefinition nicht gefunden',
+                        });
+                        continue;
+                    }
+
+                    console.log('Creating field:', sourceField.name);
+
+                    await createGroupMemberField(this.state.targetGroup.id, {
+                        name: sourceField.name,
+                        fieldTypeCode: sourceField.fieldTypeCode,
+                        note: sourceField.note || '',
+                        defaultValue: sourceField.defaultValue || '',
+                        options: sourceField.options || [],
+                        securityLevel: String(sourceField.securityLevel || 1),
+                        useInRegistrationForm: sourceField.useInRegistrationForm ?? false,
+                        requiredInRegistrationForm: sourceField.requiredInRegistrationForm ?? false,
+                        sortKey: sourceField.sortKey || 1,
+                    });
+
+                    results.success.push(sourceField.name);
+                    console.log('✓ Field created:', sourceField.name);
+                } catch (error) {
+                    console.error('Error creating field:', selectedField.fieldName, error);
+                    results.failed.push({
+                        field: selectedField.fieldName,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                }
+            }
+
+            // Show results
+            let message = '';
+            if (results.success.length > 0) {
+                message += `✅ ${results.success.length} Feld(er) erfolgreich angelegt:\n`;
+                message += results.success.map(f => `  - ${f}`).join('\n');
+            }
+            if (results.failed.length > 0) {
+                message += `\n\n❌ ${results.failed.length} Feld(er) konnten nicht angelegt werden:\n`;
+                message += results.failed.map(f => `  - ${f.field}: ${f.error}`).join('\n');
+            }
+
+            alert(message);
+
+            // Reload target fields to show newly created fields
+            if (results.success.length > 0) {
+                this.state.targetFields = await getGroupSpecificMemberFields(this.state.targetGroup.id);
+            }
+
+            this.state.loading = false;
+            this.render();
+        } catch (error) {
+            console.error('Error creating fields:', error);
+            this.state.error = `Fehler beim Anlegen der Felder: ${error}`;
+            this.state.loading = false;
+            this.render();
+        }
+    }
+
+    private async onSaveSelection(): Promise<void> {
+        if (!this.state.configuration || !this.state.targetGroup) return;
+
+        this.state.loading = true;
+        this.render();
+
+        try {
+            // Update timestamp
+            this.state.configuration.lastUpdated = new Date().toISOString();
+
+            // Serialize and save
+            const configJson = serializeConfiguration(this.state.configuration);
+            
+            await updateGroupCustomFields(this.state.targetGroup.id, {
+                bwl_gmfp_config: configJson,
+            });
+
+            alert('✅ Auswahl erfolgreich gespeichert!');
+            
+            this.state.loading = false;
+            this.render();
+        } catch (error) {
+            console.error('Error saving selection:', error);
+            this.state.error = `Fehler beim Speichern: ${error}`;
+            this.state.loading = false;
+            this.render();
         }
     }
 }
