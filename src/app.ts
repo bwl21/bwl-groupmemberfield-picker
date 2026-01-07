@@ -69,11 +69,12 @@ export class GroupMemberFieldPickerApp {
             this.state.loading = true;
             this.render();
 
-            const response = await churchtoolsClient.get<Group[]>('/groups');
+            // Use getAllPages to fetch all groups, not just the first 10
+            const allGroups = await churchtoolsClient.getAllPages<Group>('/groups');
             
-            console.log('Groups response:', response);
+            console.log('Loaded groups:', allGroups.length);
             
-            this.state.allGroups = Array.isArray(response) ? response : [];
+            this.state.allGroups = allGroups;
             this.state.loading = false;
             this.render();
         } catch (error) {
