@@ -68,8 +68,8 @@ export class GroupMemberFieldPickerApp {
             this.state.loading = true;
             this.render();
 
-            // Use getAllPages to fetch all groups, not just the first 10
-            const allGroups = await churchtoolsClient.getAllPages<Group>('/groups');
+            // Use getAllPages to fetch all groups with pagination
+            const allGroups = await churchtoolsClient.getAllPages<Group>('/groups', {}, 100);
             
             console.log('Loaded groups:', allGroups.length);
             
