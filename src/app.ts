@@ -7,8 +7,7 @@ import {
     createGroupMemberField
 } from './utils/group-member-fields';
 import type { 
-    FieldSelectionConfiguration,
-    SelectedField
+    FieldSelectionConfiguration
 } from './utils/field-mapping-types';
 import { 
     parseConfiguration, 
@@ -69,11 +68,12 @@ export class GroupMemberFieldPickerApp {
             this.state.loading = true;
             this.render();
 
-            const response = await churchtoolsClient.get<Group[]>('/groups');
+            // Use getAllPages to fetch all groups with pagination
+            const allGroups = await churchtoolsClient.getAllPages<Group>('/groups', {}, 100);
             
-            console.log('Groups response:', response);
+            console.log('Loaded groups:', allGroups.length);
             
-            this.state.allGroups = Array.isArray(response) ? response : [];
+            this.state.allGroups = allGroups;
             this.state.loading = false;
             this.render();
         } catch (error) {
@@ -108,7 +108,7 @@ export class GroupMemberFieldPickerApp {
             console.log('Loaded configField:', configField);
             console.log('Loaded targetFields:', targetFields);
 
-            this.state.configField = configField;
+            this.state.configField = configField || null;
             this.state.targetFields = targetFields;
 
             // If config field exists

@@ -19,10 +19,10 @@ export async function getGroupMemberFields(
         console.log('Member fields raw response:', response);
         console.log('Response type:', typeof response);
         console.log('Is array?', Array.isArray(response));
-        console.log('Has data?', response && 'data' in response);
+        console.log('Has data?', response && typeof response === 'object' && !Array.isArray(response) && 'data' in response);
         
         // Check if response has 'data' property (client didn't unpack)
-        if (response && typeof response === 'object' && 'data' in response) {
+        if (response && typeof response === 'object' && !Array.isArray(response) && 'data' in response) {
             console.log('Unpacking data property');
             return (response as any).data as GroupMemberField[];
         }
