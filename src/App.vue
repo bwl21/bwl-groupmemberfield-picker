@@ -1,10 +1,12 @@
 <template>
   <Toast />
-  <div class="min-h-screen bg-gray-50" style="padding: 1.25rem;">
-    <div style="max-width: 56rem; margin: 0 auto;">
-      <Card>
+  <div style="width: 100%; max-width: 56rem;">
+    <Card>
       <template #content>
-        <h1 class="text-3xl font-bold mb-6">Gruppenmitgliedsfelder zusammensammeln</h1>
+        <div class="flex justify-between items-center mb-6">
+          <h1 class="text-3xl font-bold">Gruppenmitgliedsfelder zusammensammeln</h1>
+          <span class="text-sm text-gray-600">v{{ version }}</span>
+        </div>
 
         <Message v-if="error" severity="error" :closable="false">
           {{ error }}
@@ -154,8 +156,7 @@
           </div>
         </div>
       </template>
-      </Card>
-    </div>
+    </Card>
   </div>
 </template>
 
@@ -183,9 +184,13 @@ import {
   serializeConfiguration,
   type FieldSelectionConfiguration,
 } from './utils/field-mapping-types';
+import packageJson from '../package.json';
 
 // Toast
 const toast = useToast();
+
+// Version
+const version = packageJson.version;
 
 // State
 const loading = ref(false);
