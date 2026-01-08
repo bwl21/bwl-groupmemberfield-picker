@@ -1,6 +1,13 @@
+import { createApp } from 'vue';
+import PrimeVue from 'primevue/config';
+import ToastService from 'primevue/toastservice';
+import Aura from '@primevue/themes/aura';
 import { churchtoolsClient } from '@churchtools/churchtools-client';
-import { GroupMemberFieldPickerApp } from './app';
+import App from './App.vue';
 import './styles.css';
+
+// PrimeVue CSS
+import 'primeicons/primeicons.css';
 
 // only import reset.css in development mode to keep the production bundle small and to simulate CT environment
 if (import.meta.env.MODE === 'development') {
@@ -29,6 +36,15 @@ if (import.meta.env.MODE === 'development' && username && password) {
 const KEY = import.meta.env.VITE_KEY;
 export { KEY };
 
-// Initialize the app
-const app = new GroupMemberFieldPickerApp('#app');
-await app.init();
+// Initialize Vue app
+const app = createApp(App);
+app.use(PrimeVue, {
+    theme: {
+        preset: Aura,
+        options: {
+            darkModeSelector: false,
+        }
+    }
+});
+app.use(ToastService);
+app.mount('#app');
