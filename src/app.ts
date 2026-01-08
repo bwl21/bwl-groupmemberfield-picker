@@ -342,7 +342,10 @@ export class GroupMemberFieldPickerApp {
 
         return `
             <div class="p-card p-4">
-                <h1 class="text-3xl font-bold mb-6">Gruppenmitgliedsfelder zusammensammeln</h1>
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold">Gruppenmitgliedsfelder zusammensammeln</h1>
+                    <span class="text-sm text-gray-500">v${__APP_VERSION__}</span>
+                </div>
                 
                 ${this.renderStep1()}
                 ${this.renderStep2()}
