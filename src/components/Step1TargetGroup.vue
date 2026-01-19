@@ -92,12 +92,8 @@ Hinweis: Dies ist ein GRUPPENFELD (Custom Group Field), nicht ein Gruppenmitglie
         </template>
 
         <!-- Config field status -->
-        <template v-if="targetGroup">
-            <Message v-if="configField" severity="success" :closable="false">
-                Konfigurationsfeld gefunden: <strong>{{ configField.fieldName }}</strong>
-            </Message>
-
-            <Message v-else severity="warn" :closable="false">
+        <template v-if="targetGroup && !configField">
+            <Message severity="warn" :closable="false">
                 <div class="config-warning">
                     <p><strong>⚠️ Konfigurationsfeld fehlt</strong></p>
                     <p>Das benötigte <strong>GRUPPENFELD</strong> (nicht Gruppenmitgliedsfeld!) wurde nicht gefunden.</p>

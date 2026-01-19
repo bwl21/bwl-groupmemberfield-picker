@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useToast } from 'primevue/usetoast';
 import { churchtoolsClient } from '@churchtools/churchtools-client';
 import Card from 'primevue/card';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import Toast from 'primevue/toast';
+
 import Step1TargetGroup from './components/Step1TargetGroup.vue';
 import Step2SourceGroup from './components/Step2SourceGroup.vue';
 import Step3FieldSelection from './components/Step3FieldSelection.vue';
@@ -21,6 +23,7 @@ import {
 
 declare const __APP_VERSION__: string;
 
+const toast = useToast();
 const appVersion = __APP_VERSION__;
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -34,7 +37,63 @@ const configuration = ref<FieldSelectionConfiguration | null>(null);
 
 onMounted(async () => {
     await loadGroups();
+    await checkUrlForGroupId();
 });
+
+async function checkUrlForGroupId() {
+    let groupId: number | null = null;
+    let source = '';
+
+    // 1. Check URL parameters first (highest priority)
+    const urlParams = new URLSearchParams(window.location.search);
+    const groupIdParam = urlParams.get('groupId') || urlParams.get('group');
+    
+    if (groupIdParam) {
+        const parsed = parseInt(groupIdParam, 10);
+        if (!isNaN(parsed)) {
+            groupId = parsed;
+            source = 'URL-Parameter';
+        }
+    }
+
+    // 2. Check referrer - if coming from a ChurchTools group page
+    if (!groupId && document.referrer) {
+        const referrerMatch = document.referrer.match(/\/groups\/(\d+)/);
+        if (referrerMatch) {
+            groupId = parseInt(referrerMatch[1], 10);
+            source = 'Gruppenseite';
+        }
+    }
+
+    // 3. Check parent window location (for iframe embedding)
+    if (!groupId) {
+        try {
+            const parentUrl = window.parent?.location?.href;
+            if (parentUrl && parentUrl !== window.location.href) {
+                const parentMatch = parentUrl.match(/\/groups\/(\d+)/);
+                if (parentMatch) {
+                    groupId = parseInt(parentMatch[1], 10);
+                    source = 'Eltern-Fenster';
+                }
+            }
+        } catch {
+            // Cross-origin access blocked - ignore
+        }
+    }
+
+    if (groupId) {
+        const group = allGroups.value.find(g => g.id === groupId);
+        if (group) {
+            toast.add({ 
+                severity: 'info', 
+                summary: 'Gruppe erkannt', 
+                detail: `Zielgruppe "${group.name}" wurde aus ${source} geladen`, 
+                life: 4000 
+            });
+            await onTargetGroupSelected(group);
+        }
+    }
+}
 
 async function loadGroups() {
     try {
@@ -67,6 +126,7 @@ async function onTargetGroupSelected(group: Group) {
         targetFields.value = fields;
 
         if (config) {
+            toast.add({ severity: 'success', summary: 'Gefunden', detail: `Konfigurationsfeld: ${config.fieldName}`, life: 3000 });
             if (config.value) {
                 const parsed = parseConfiguration(config.value);
                 if (parsed) {
