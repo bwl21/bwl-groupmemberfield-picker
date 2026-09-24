@@ -18,7 +18,10 @@ declare const window: Window &
         };
     };
 
-const baseUrl = window.settings?.base_url ?? import.meta.env.VITE_CHURCHTOOLS_URL ?? import.meta.env.VITE_BASE_URL;
+const baseUrl = window.settings?.base_url
+    ?? import.meta.env.VITE_CHURCHTOOLS_URL
+    ?? import.meta.env.VITE_BASE_URL
+    ?? (import.meta.env.PROD ? window.location.origin : undefined);
 if (!baseUrl) {
     throw new Error('VITE_CHURCHTOOLS_URL or VITE_BASE_URL must be set in .env file');
 }

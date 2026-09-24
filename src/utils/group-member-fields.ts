@@ -34,10 +34,10 @@ export async function getGroupMemberFields(
         }
         
         console.warn('Unexpected response format:', response);
-        return [];
+        throw new Error('Unerwartetes Format der Gruppenmitgliedsfelder');
     } catch (error) {
         console.error('Error fetching member fields:', error);
-        return [];
+        throw error;
     }
 }
 

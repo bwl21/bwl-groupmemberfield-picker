@@ -11,12 +11,14 @@ import Step1TargetGroup from './components/Step1TargetGroup.vue';
 import Step2SourceGroup from './components/Step2SourceGroup.vue';
 import Step3FieldSelection from './components/Step3FieldSelection.vue';
 import type { Group, GroupMemberFieldGroup } from './utils/ct-types';
+import type { SourceGroupFields } from './utils/source-group-fields';
 import type { FieldSelectionConfiguration } from './utils/field-mapping-types';
 import { 
     findConfigurationField, 
     getGroupSpecificMemberFields 
 } from './utils/group-member-fields';
 import { 
+    getSourceGroupIds,
     parseConfiguration, 
     createEmptyConfiguration 
 } from './utils/field-mapping-types';
@@ -29,10 +31,10 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const allGroups = ref<Group[]>([]);
 const targetGroup = ref<Group | null>(null);
-const sourceGroup = ref<Group | null>(null);
+const sourceGroups = ref<SourceGroupFields[]>([]);
+const busy = ref(false);
 const configField = ref<{ fieldName: string; value: string | undefined } | null>(null);
 const targetFields = ref<GroupMemberFieldGroup[]>([]);
-const sourceFields = ref<GroupMemberFieldGroup[]>([]);
 const configuration = ref<FieldSelectionConfiguration | null>(null);
 
 onMounted(async () => {
@@ -112,8 +114,7 @@ async function onTargetGroupSelected(group: Group) {
     configField.value = null;
     targetFields.value = [];
     configuration.value = null;
-    sourceGroup.value = null;
-    sourceFields.value = [];
+    sourceGroups.value = [];
     loading.value = true;
 
     try {
@@ -131,14 +132,7 @@ async function onTargetGroupSelected(group: Group) {
                 const parsed = parseConfiguration(config.value);
                 if (parsed) {
                     configuration.value = parsed;
-                    if (parsed.selectedFields.length > 0) {
-                        const sourceGroupId = parsed.selectedFields[0].sourceGroupId;
-                        const srcGroup = allGroups.value.find(g => g.id === sourceGroupId);
-                        if (srcGroup) {
-                            sourceGroup.value = srcGroup;
-                            sourceFields.value = await getGroupSpecificMemberFields(sourceGroupId);
-                        }
-                    }
+                    sourceGroups.value = await Promise.all(getSourceGroupIds(parsed).map(loadSourceGroup));
                 } else {
                     configuration.value = createEmptyConfiguration(group.id);
                 }
@@ -159,26 +153,54 @@ function clearTargetGroup() {
     configField.value = null;
     targetFields.value = [];
     configuration.value = null;
-    sourceGroup.value = null;
-    sourceFields.value = [];
+    sourceGroups.value = [];
 }
 
-async function onSourceGroupSelected(group: Group) {
-    sourceGroup.value = group;
-    loading.value = true;
-
+async function loadSourceGroup(id: number): Promise<SourceGroupFields> {
+    const group = allGroups.value.find(group => group.id === id);
+    if (!group || id === targetGroup.value?.id) {
+        return { id, name: group?.name ?? `Quellgruppe #${id}`, fields: [], error: 'Diese Gruppe ist nicht als Quellgruppe verfügbar.' };
+    }
     try {
-        sourceFields.value = await getGroupSpecificMemberFields(group.id);
-        loading.value = false;
-    } catch (err) {
-        error.value = `Fehler beim Laden der Quellgruppenfelder: ${err instanceof Error ? err.message : String(err)}`;
-        loading.value = false;
+        return { id, name: group.name, fields: await getGroupSpecificMemberFields(id) };
+    } catch {
+        return { id, name: group.name, fields: [], error: 'Die Felder dieser Quellgruppe konnten nicht geladen werden. Bitte erneut laden.' };
     }
 }
 
-function clearSourceGroup() {
-    sourceGroup.value = null;
-    sourceFields.value = [];
+async function onSourceGroupSelected(group: Group) {
+    if (busy.value || !configuration.value || sourceGroups.value.some(source => source.id === group.id)) return;
+    busy.value = true;
+    try {
+        sourceGroups.value.push(await loadSourceGroup(group.id));
+        configuration.value = {
+            ...configuration.value,
+            sourceGroupIds: sourceGroups.value.map(source => source.id),
+        };
+    } finally {
+        busy.value = false;
+    }
+}
+
+function removeSourceGroup(groupId: number) {
+    if (busy.value || !configuration.value) return;
+    sourceGroups.value = sourceGroups.value.filter(group => group.id !== groupId);
+    configuration.value = {
+        ...configuration.value,
+        sourceGroupIds: sourceGroups.value.map(group => group.id),
+        selectedFields: configuration.value.selectedFields.filter(field => field.sourceGroupId !== groupId),
+    };
+}
+
+async function retrySourceGroup(groupId: number) {
+    if (busy.value) return;
+    busy.value = true;
+    try {
+        const source = await loadSourceGroup(groupId);
+        sourceGroups.value = sourceGroups.value.map(group => group.id === groupId ? source : group);
+    } finally {
+        busy.value = false;
+    }
 }
 
 function onConfigurationUpdated(config: FieldSelectionConfiguration) {
@@ -206,30 +228,35 @@ function onTargetFieldsUpdated(fields: GroupMemberFieldGroup[]) {
             </Message>
 
             <template v-else>
-                <Step1TargetGroup
-                    :allGroups="allGroups"
-                    :targetGroup="targetGroup"
-                    :configField="configField"
-                    @select="onTargetGroupSelected"
-                    @clear="clearTargetGroup"
-                />
+                <div :inert="busy">
+                    <Step1TargetGroup
+                        :allGroups="allGroups"
+                        :targetGroup="targetGroup"
+                        :configField="configField"
+                        @select="onTargetGroupSelected"
+                        @clear="clearTargetGroup"
+                    />
 
-                <Step2SourceGroup
-                    v-if="targetGroup && configField"
-                    :allGroups="allGroups"
-                    :targetGroup="targetGroup"
-                    :sourceGroup="sourceGroup"
-                    @select="onSourceGroupSelected"
-                    @clear="clearSourceGroup"
-                />
+                    <Step2SourceGroup
+                        v-if="targetGroup && configField"
+                        :allGroups="allGroups"
+                        :targetGroup="targetGroup"
+                        :sourceGroups="sourceGroups"
+                        @select="onSourceGroupSelected"
+                        @remove="removeSourceGroup"
+                    />
+
+                </div>
 
                 <Step3FieldSelection
-                    v-if="targetGroup && configField && sourceGroup"
+                    v-if="targetGroup && configField && configuration"
                     :targetGroup="targetGroup"
-                    :sourceGroup="sourceGroup"
-                    :sourceFields="sourceFields"
+                    :sourceGroups="sourceGroups"
                     :targetFields="targetFields"
                     :configuration="configuration"
+                    :busy="busy"
+                    @update:busy="busy = $event"
+                    @retry="retrySourceGroup"
                     @update:configuration="onConfigurationUpdated"
                     @update:targetFields="onTargetFieldsUpdated"
                 />
